@@ -1,11 +1,15 @@
 #pragma once
 
-#include <set>
 #include <cctype>
+#include <map>
+#include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "Dast/collections/LinkedList.hpp"
 
 class Tokenizer {
 public:
@@ -15,33 +19,36 @@ public:
     /// @param raw Raw sentences.
     /// @param lower Normalize to lower case.
     /// @return Tokens
-    [[nodiscard]] virtual std::vector<std::string> tokenize(const std::vector<std::string>& raw, bool lower) const = 0;
+    [[nodiscard]] virtual std::set<std::string> tokenize(const std::vector<std::string>& raw, unsigned int vocab, bool lower) const = 0;
 
     virtual ~Tokenizer() = default;
 };
 
-inline std::vector<std::vector<std::string>> normalize(const std::vector<std::string>& raw, const bool lower) {
+inline std::vector<std::vector<Dast::LinkedList<int>>> normalize(const std::vector<std::string>& raw, const bool lower) {
 
-    std::vector<std::vector<std::string>> res;
+    // Sentence -> word -> letters (as linked string chars)
+    std::vector<std::vector<Dast::LinkedList<int>>> res;
     res.reserve(raw.size());
 
     for (const std::string& sentence : raw) {
-        std::vector<std::string> normalized;
+        std::vector<Dast::LinkedList<int>> normalized;
 
         std::stringstream ss(sentence);
         std::string word;
         while (!ss.eof()) {
             getline(ss, word, ' ');
 
-            std::string curr;
+            Dast::LinkedList<int> curr;
 
-            for (char& c : word) {
+            for (const char& c : word) {
                 if (std::isalpha(c)) {
-                    curr += lower ? std::tolower(c) : c;
+                    curr.push_back(lower ? std::tolower(c) : static_cast<int>(c));
                 } else if (word.length() > 1) {
-                    normalized.emplace_back(curr);
-                    normalized.emplace_back(1, c);
-                    curr = "";
+                    if (!curr.empty()) {
+                        normalized.emplace_back(curr);
+                        curr.clear();
+                    }
+                    normalized.emplace_back(Dast::LinkedList{static_cast<int>(c)});
                 }
             }
 
@@ -56,18 +63,6 @@ inline std::vector<std::vector<std::string>> normalize(const std::vector<std::st
     return res;
 }
 
-inline std::set<std::string> get_vocab(const std::vector<std::vector<std::string>>& data) {
-    std::set<std::string> vocab;
-
-    for (const auto& sentence : data) {
-        for (const auto& word : sentence) {
-            vocab.insert(word);
-        }
-    }
-
-    return vocab;
-}
-
 class WordPieceTokenizer final : public Tokenizer {
 public:
 
@@ -75,64 +70,116 @@ public:
     /// @param raw Raw sentences.
     /// @param lower Normalize to lower case.
     /// @return Tokens
-    [[nodiscard]] std::vector<std::string> tokenize(const std::vector<std::string>& raw, const bool lower) const override {
-
-        const std::vector<std::vector<std::string>> normalized = normalize(raw, lower);
-
-        const std::set<std::string> vocab = get_vocab(normalized);
-
-        std::set<std::string> tokens;
-        std::set<std::string> special;
-
-        std::unordered_map<std::string, unsigned int> freqs = {};
-
-        for (const std::vector<std::string>& sentence : normalized) {
-            for (const std::string& word : sentence) {
-                for (int l = 0; l < word.size(); l++) {
-                    // Special characters just get added
-                    if (!std::isalpha(word[l])) {
-                        special.insert(std::string(1, word[l]));
-                        continue;
-                    }
-
-                    // Check alpha characters
-                    if (l > 0 && word[l - 1] == ' ') {
-                        tokens.insert(std::string(1, word[l]));
-                        if (freqs.find(std::string(1, word[l])) == freqs.end()) {
-                            freqs[std::string(1, word[l])] = 1;
-                        } else {
-                            freqs[std::string(1, word[l])] = freqs[std::string(1, word[l])] + 1;
-                        }
-                    } else {
-                        tokens.insert(WORD_PIECE_DELIMITER + sentence[l]);
-                    }
-                }
-            }
-        }
-
-        std::vector<std::string> res;
-
-        return res;
+    [[nodiscard]] std::set<std::string> tokenize(const std::vector<std::string>& raw, const unsigned int vocab, const bool lower) const override {
+        // TODO
     }
 private:
     const std::string WORD_PIECE_DELIMITER = "##";
+};
+
+struct pair_hash {
+    std::size_t operator()(const std::pair<int, int>& p) const {
+        return std::hash<int>()(p.first) ^ std::hash<int>()(p.second) << 1;
+    }
 };
 
 class BytePairTokenizer final : public Tokenizer {
 public:
     /// Tokenizes raw data via Byte Pair algorithm.
     /// @param raw Raw sentences.
+    /// @param n_vocab Number of tokens
     /// @param lower Normalize to lower case.
     /// @return Tokens
-    [[nodiscard]] std::vector<std::string> tokenize(const std::vector<std::string>& raw, const bool lower) const override {
-        const std::vector<std::vector<std::string>> normalized = normalize(raw, lower);
+    [[nodiscard]] std::set<std::string> tokenize(const std::vector<std::string>& raw, const unsigned int n_vocab, const bool lower) const override {
 
-        std::set<std::string> corpus = get_vocab(normalized);
+        std::vector<std::vector<Dast::LinkedList<int>>> normalized = normalize(raw, lower);
 
-        std::set<std::string> tokens;
+        // Use ordered map for better decoding
+        std::map<int, std::pair<int, std::optional<int>>> defs = {};
 
+        // Add characters to vocab
+        int max = 0;
+        for (const auto& sentence : normalized) {
+            for (const auto& word : sentence) {
+                for (const auto& letter : word) {
+                    max = std::max(max, letter);
+                    defs[letter] = std::make_pair(letter, std::optional<int>{});
+                }
+            }
+        }
 
+        while (defs.size() < n_vocab) {
+
+            std::unordered_map<std::pair<int, int>, int, pair_hash> freqs = {};
+
+            // Get the frequencies of all pairings of characters
+            for (std::vector<Dast::LinkedList<int>>& sentence: normalized) {
+                for (Dast::LinkedList<int>& word : sentence) {
+                    Dast::Node<int>* node = word.get_ptr();
+                    while (node->next != nullptr) {
+                        freqs[std::pair(node->data, node->next->data)]++;
+                        node = node->next;
+                    }
+                }
+            }
+
+            // If we do not get a frequency distribution it would indicate merging is complete.
+            if (freqs.empty()) {
+                break;
+            }
+
+            // Add mode to defs
+            int mode = 0;
+            std::pair<int, int> key;
+            for (const auto&[freq_key, count] : freqs) {
+                if (count > mode) {
+                    mode = count;
+                    key = {freq_key.first, freq_key.second};
+                }
+            }
+
+            max = max + 1;
+            defs[max] = key;
+
+            // Replace occurrences in normalized with new
+            for (std::vector<Dast::LinkedList<int>>& sentence: normalized) {
+                for (Dast::LinkedList<int>& word : sentence) {
+                    auto node = word.get_ptr();
+
+                    while (node != nullptr && node->next != nullptr) {
+                        if (node->data == key.first && node->next->data == key.second) {
+                            Dast::Node<int>* next = node->next->next;
+                            node->data = max;
+                            delete node->next;
+                            node->next = next;
+                        }
+                        node = node->next;
+                    }
+                }
+            }
+        }
+
+        // Decode in the order from least to greatest key
+        std::set<std::string> tokens = {};
+        for (const auto&[encoding, comps] : defs) {
+            tokens.emplace(decode(defs, comps));
+        }
+
+        return tokens;
     }
-}
+
+    static std::string decode(const std::map<int, std::pair<int, std::optional<int>>>& defs, const std::pair<int, std::optional<int>>& encoded) {
+
+        std::string val = "";
+        if (encoded.second.has_value()) {
+            val += decode(defs, defs.at(encoded.first));
+            val += decode(defs, defs.at(encoded.second.value()));
+        } else {
+            val += encoded.first;
+        }
+
+        return val;
+    }
+};
 
 

@@ -6,6 +6,7 @@ PROJECT(${PROJECTNAME})
 
 FILE(GLOB_RECURSE PROJECT_SOURCES ${CMAKE_SOURCE_DIR}/src/*.cpp)
 FILE(GLOB_RECURSE PROJECT_HEADERS ${CMAKE_SOURCE_DIR}/include/*.hpp)
+FILE(GLOB_RECURSE TEST_SOURCES ${CMAKE_SOURCE_DIR}/tests/*.cpp)
 FILE(GLOB_RECURSE THIRD_PARTY_SOURCES ${CMAKE_SOURCE_DIR}/third-party/lib/*.cpp)
 FILE(GLOB_RECURSE THIRD_PARTY_C_HEADERS ${CMAKE_SOURCE_DIR}/third-party/include/*.h)
 FILE(GLOB_RECURSE THIRD_PARTY_CXX_HEADERS ${CMAKE_SOURCE_DIR}/third-party/include/*.hpp)
@@ -13,15 +14,30 @@ FILE(GLOB_RECURSE THIRD_PARTY_CXX_HEADERS ${CMAKE_SOURCE_DIR}/third-party/includ
 INCLUDE_DIRECTORIES(
     ${CMAKE_SOURCE_DIR}/include/
     ${CMAKE_SOURCE_DIR}/third-party/include/
+    ${CMAKE_SOURCE_DIR}/third-party/lib/catch2
+    ${CMAKE_SOURCE_DIR}/third-party/include/catch2
 )
 
 ADD_EXECUTABLE(${PROJECTNAME}
         ${PROJECT_SOURCES}
         ${PROJECT_HEADERS}
         ${THIRD_PARTY_C_HEADERS}
-        ${THIRD_PARTY_CXX_HEADERS}
-        ${THIRD_PARTY_SOURCES}
 )
+
+# Enable testing
+ENABLE_TESTING()
+
+# Add Catch2 main source
+SET(CATCH_SOURCE ${CMAKE_SOURCE_DIR}/third-party/lib/catch2/catch_amalgamated.cpp)
+
+# Add test executable
+ADD_EXECUTABLE(${PROJECTNAME}_Tests
+    ${TEST_SOURCES}
+    ${CMAKE_SOURCE_DIR}/third-party/lib/catch2/catch_amalgamated.cpp
+)
+
+# Add tests to CTest
+ADD_TEST(NAME ${PROJECTNAME}_Tests COMMAND ${PROJECTNAME}_Tests)
 
 SET(CMAKE_CXX_STANDARD 23)
 SET(CMAKE_CXX_STANDARD_REQUIRED ON)

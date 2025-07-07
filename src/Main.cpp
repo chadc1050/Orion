@@ -10,7 +10,7 @@ using Translation = std::pair<std::string, std::string>;
 int main() {
 
     std::cout << "Parsing Raw Data..." << std::endl;
-    const std::vector<Translation> translations = read_file("../data/wmt14_translate_de-en_train.csv");
+    const std::vector<Translation> translations = read_file("../data/wmt14_translate_de-en_test.csv");
 
     std::cout << "Raw Data: " << translations.size() << std::endl;
 
@@ -28,10 +28,10 @@ int main() {
     const BytePairTokenizer tokenizer;
 
     std::cout << "Tokenizing English Data..." << std::endl;
-    std::vector<std::string> en_tokens = tokenizer.tokenize(en, true);
+    std::set<std::string> en_tokens = tokenizer.tokenize(en, 1000, true);
 
     std::cout << "Tokenizing German Data..." << std::endl;
-    std::vector<std::string> de_tokens = tokenizer.tokenize(de, false);
+    std::set<std::string> de_tokens = tokenizer.tokenize(de, 1000, false);
 
     return 0;
 }

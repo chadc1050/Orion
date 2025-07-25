@@ -7,41 +7,49 @@ namespace Dast {
         T data;
         Node* next;
 
-        explicit Node(T data) : data(data), next(nullptr) {}
-        Node(T data, Node* next) : data(data), next(next) {}
-        Node() : next(nullptr) {}
+        explicit Node(const T& data) : data(data), next(nullptr) {}
+        explicit Node(T&& data) : data(std::move(data)), next(nullptr) {}
 
-        bool operator==(Node other) {
-            return next == other.next;
+        Node(const T& data, Node* next) : data(data), next(next) {}
+        Node(T&& data, Node* next) : data(std::move(data)), next(next) {}
+
+        Node() : data(), next(nullptr) {}
+
+        bool operator==(const Node& other) const {
+            return data == other.data && next == other.next;
         }
 
-        bool operator!=(Node other) {
-            return next != other.next;
+        bool operator!=(const Node& other) const {
+            return data != other.data || next != other.next;
         }
     };
 
     template<typename T>
     class LinkedList {
     public:
-        LinkedList() = default;
+        LinkedList() : head(nullptr) {}
 
         LinkedList(std::initializer_list<T> init) {
-            for (size_t i = init.size(); i > 0; --i) {
-                push_front(init.begin()[i - 1]);
+            for (auto it = std::rbegin(init); it != std::rend(init); ++it) {
+                push_front(*it);
             }
         }
 
         LinkedList(const LinkedList& other) {
-            for (Node<T>* curr = other.head; curr != nullptr; curr = curr->next) {
-                push_back(curr->data);
+            Node<T>** curr = &head;
+            for (Node<T>* node = other.head; node != nullptr; node = node->next) {
+                *curr = new Node<T>(node->data);
+                curr = &(*curr)->next;
             }
         }
 
         LinkedList& operator=(const LinkedList& other) {
             if (this != &other) {
                 clear();
-                for (Node<T>* curr = other.head; curr != nullptr; curr = curr->next) {
-                    push_back(curr->data);
+                Node<T>** curr = &head;
+                for (Node<T>* node = other.head; node != nullptr; node = node->next) {
+                    *curr = new Node<T>(node->data);
+                    curr = &(*curr)->next;
                 }
             }
             return *this;
@@ -92,7 +100,7 @@ namespace Dast {
                 return curr != other.curr;
             }
 
-            int operator*() {
+            T& operator*() {
                 if (curr == nullptr) {
                     throw std::runtime_error("Dereferencing end iterator");
                 }
@@ -185,11 +193,6 @@ namespace Dast {
         }
 
         void push_front(T item) {
-            if (head == nullptr) {
-                head = new Node<T>(item);
-                return;
-            }
-
             head = new Node<T>(item, head);
         }
 

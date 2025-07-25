@@ -35,8 +35,7 @@ inline std::vector<std::vector<Dast::LinkedList<int>>> normalize(const std::vect
 
         std::stringstream ss(sentence);
         std::string word;
-        while (!ss.eof()) {
-            getline(ss, word, ' ');
+        while (getline(ss, word, ' ')) {
 
             Dast::LinkedList<int> curr;
 
@@ -45,7 +44,7 @@ inline std::vector<std::vector<Dast::LinkedList<int>>> normalize(const std::vect
                     curr.push_back(lower ? std::tolower(c) : static_cast<int>(c));
                 } else if (word.length() > 1) {
                     if (!curr.empty()) {
-                        normalized.emplace_back(curr);
+                        normalized.emplace_back(std::move(curr));
                         curr.clear();
                     }
                     normalized.emplace_back(Dast::LinkedList{static_cast<int>(c)});
@@ -53,7 +52,7 @@ inline std::vector<std::vector<Dast::LinkedList<int>>> normalize(const std::vect
             }
 
             if (!curr.empty()) {
-                normalized.emplace_back(curr);
+                normalized.emplace_back(std::move(curr));
             }
         }
 
@@ -62,20 +61,6 @@ inline std::vector<std::vector<Dast::LinkedList<int>>> normalize(const std::vect
 
     return res;
 }
-
-class WordPieceTokenizer final : public Tokenizer {
-public:
-
-    /// Tokenizes raw data via Word Piece algorithm.
-    /// @param raw Raw sentences.
-    /// @param lower Normalize to lower case.
-    /// @return Tokens
-    [[nodiscard]] std::set<std::string> tokenize(const std::vector<std::string>& raw, const unsigned int vocab, const bool lower) const override {
-        // TODO
-    }
-private:
-    const std::string WORD_PIECE_DELIMITER = "##";
-};
 
 struct pair_hash {
     std::size_t operator()(const std::pair<int, int>& p) const {
@@ -93,6 +78,8 @@ public:
     [[nodiscard]] std::set<std::string> tokenize(const std::vector<std::string>& raw, const unsigned int n_vocab, const bool lower) const override {
 
         std::vector<std::vector<Dast::LinkedList<int>>> normalized = normalize(raw, lower);
+
+        std::cout << "Normalized data" << std::endl;
 
         // Use ordered map for better decoding
         std::map<int, std::pair<int, std::optional<int>>> defs = {};
@@ -170,12 +157,12 @@ public:
 
     static std::string decode(const std::map<int, std::pair<int, std::optional<int>>>& defs, const std::pair<int, std::optional<int>>& encoded) {
 
-        std::string val = "";
+        std::string val;
         if (encoded.second.has_value()) {
             val += decode(defs, defs.at(encoded.first));
             val += decode(defs, defs.at(encoded.second.value()));
         } else {
-            val += encoded.first;
+            val += static_cast<char>(encoded.first);
         }
 
         return val;
